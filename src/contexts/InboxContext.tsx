@@ -1,18 +1,6 @@
-/**
- * ============================================================================
- * FILE HEADER COMMENT
- * ============================================================================
- * FILE NAME        : InboxContext.tsx
- * WHAT THIS FILE DOES : Provides shared admin portal state through React context
- * HOW IT DOES IT      : Uses focused TypeScript and React code for one responsibility
- * DATA SOURCE         : Local props, context, mock data, or user input as applicable
- * DATA DESTINATION    : Admin portal UI, context state, or exported helpers
- * PRINCIPLE APPLIED   : SOLID
- * ============================================================================
- */
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { getMockAdminData, type NotificationRecord } from '../data/mockAdminService';
+import { api } from '../lib/api';
 import { useAuth } from './AuthContext';
 
 export interface Message {
@@ -60,15 +48,57 @@ interface InboxContextType {
 
 const InboxContext = createContext<InboxContextType | undefined>(undefined);
 
-const toAppNotification = (notification: NotificationRecord): AppNotification => ({
+const notificationType = (notification: Record<string, any>): AppNotification['type'] => {
+  const value = String(notification.channel || notification.data?.type || '').toLowerCase();
+
+  if (value.includes('kyc')) return 'kyc';
+  if (value.includes('payment') || value.includes('transaction')) return 'payment';
+  if (value.includes('message')) return 'message';
+  return 'system';
+};
+
+const toAppNotification = (notification: Record<string, any>): AppNotification => ({
   id: notification.id,
   title: notification.title,
   body: notification.body,
-  timestamp: notification.timestamp,
-  read: notification.read,
-  type: notification.type === 'payment' ? 'payment' : notification.type === 'kyc' ? 'kyc' : 'system',
-  link: notification.link,
+  timestamp: notification.createdAt || new Date().toISOString(),
+  read: Boolean(notification.readAt || notification.status === 'read'),
+  type: notificationType(notification),
+  link: '/dashboard/notifications',
 });
+
+const toConversations = (messages: Record<string, any>[]): Conversation[] => {
+  const grouped = new Map<string, Record<string, any>[]>();
+
+  for (const message of messages) {
+    const projectId = message.projectId || message.project?.id || 'project';
+    grouped.set(projectId, [...(grouped.get(projectId) || []), message]);
+  }
+
+  return [...grouped.entries()].map(([projectId, projectMessages]) => {
+    const sorted = [...projectMessages].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    const lastMessage = sorted[sorted.length - 1];
+
+    return {
+      id: projectId,
+      participantId: projectId,
+      participantName: lastMessage?.project?.name || 'Project conversation',
+      participantAvatar: '',
+      lastMessage: lastMessage?.content || '',
+      lastMessageTime: lastMessage?.createdAt || new Date().toISOString(),
+      unreadCount: 0,
+      messages: sorted.map((message) => ({
+        id: message.id,
+        senderId: message.senderId,
+        text: message.content,
+        timestamp: message.createdAt,
+        read: true,
+      })),
+    };
+  });
+};
 
 export const InboxProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -86,36 +116,20 @@ export const InboxProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    const data = await getMockAdminData();
-    setNotifications(data.notifications.map(toAppNotification));
-    setConversations([
-      {
-        id: 'conv-ops-001',
-        participantId: 'usr-engineer-001',
-        participantName: 'Eric Ndayisaba',
-        participantAvatar: '',
-        lastMessage: 'Milestone payment request is ready for review.',
-        lastMessageTime: '2026-05-24T16:25:00.000Z',
-        unreadCount: 1,
-        messages: [
-          {
-            id: 'msg-001',
-            senderId: 'usr-engineer-001',
-            text: 'Milestone payment request is ready for review.',
-            timestamp: '2026-05-24T16:25:00.000Z',
-            read: false,
-          },
-        ],
-      },
+    const [notificationsResponse, messagesResponse] = await Promise.all([
+      api.get('/api/v1/notifications'),
+      api.get('/api/v1/messages'),
     ]);
+
+    setNotifications(notificationsResponse.data.map(toAppNotification));
+    setConversations(toConversations(messagesResponse.data));
   }, [isAuthenticated]);
 
   useEffect(() => {
-    const loadInbox = async () => {
-      await refreshInbox();
-    };
-
-    loadInbox();
+    refreshInbox().catch(() => {
+      setConversations([]);
+      setNotifications([]);
+    });
   }, [refreshInbox]);
 
   const markConversationRead = useCallback(async (conversationId: string) => {
@@ -127,35 +141,29 @@ export const InboxProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const markAllNotificationsRead = useCallback(async () => {
+    await Promise.allSettled(
+      notifications
+        .filter((notification) => !notification.read)
+        .map((notification) =>
+          api.put(`/api/v1/notifications/${notification.id}`, { status: 'read' }),
+        ),
+    );
     setNotifications(prev => prev.map(notification => ({ ...notification, read: true })));
-  }, []);
+  }, [notifications]);
 
   const markNotificationRead = useCallback(async (id: string) => {
+    await api.put(`/api/v1/notifications/${id}`, { status: 'read' });
     setNotifications(prev => prev.map(notification =>
       notification.id === id ? { ...notification, read: true } : notification
     ));
   }, []);
 
   const sendMessage = useCallback((conversationId: string, text: string) => {
-    const newMessage: Message = {
-      id: `mock-msg-${Date.now()}`,
-      senderId: 'me',
-      text,
-      timestamp: new Date().toISOString(),
-      read: true,
-    };
-
-    setConversations(prev => prev.map(conversation =>
-      conversation.id === conversationId
-        ? {
-            ...conversation,
-            lastMessage: text,
-            lastMessageTime: newMessage.timestamp,
-            messages: [...conversation.messages, newMessage],
-          }
-        : conversation
-    ));
-  }, []);
+    api.post('/api/v1/messages', {
+      projectId: conversationId,
+      content: text,
+    }).then(() => refreshInbox());
+  }, [refreshInbox]);
 
   const getConversation = useCallback(
     (id: string) => conversations.find(conversation => conversation.id === id || conversation.participantId === id),

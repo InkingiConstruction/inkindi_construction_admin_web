@@ -38,7 +38,7 @@ const mapUser = (backendUser: BackendUser): User => ({
 export const useLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (payload: LoginPayload) => {
@@ -55,7 +55,10 @@ export const useLogin = () => {
         throw new Error(response.error.message || 'Login failed.');
       }
 
-      const backendUser = response.data?.user as BackendUser | undefined;
+      const session = await authClient.getSession();
+      const backendUser = (session.data?.user || response.data?.user) as
+        | BackendUser
+        | undefined;
       const token = response.data?.token || null;
 
       if (!backendUser) {
@@ -70,6 +73,9 @@ export const useLogin = () => {
       }
 
       login(token, user);
+      if (session.data?.user) {
+        await refreshUser();
+      }
       navigate('/dashboard');
 
       return { success: true };

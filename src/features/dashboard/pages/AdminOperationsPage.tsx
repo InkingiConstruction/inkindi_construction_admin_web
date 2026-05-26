@@ -3,15 +3,16 @@
  * FILE HEADER COMMENT
  * ============================================================================
  * FILE NAME        : AdminOperationsPage.tsx
- * WHAT THIS FILE DOES : Renders every mock admin operations page and table
- * HOW IT DOES IT      : Loads mock data, renders page-specific tables, and opens detail modals
- * DATA SOURCE         : mockAdminService and authenticated admin context
+ * WHAT THIS FILE DOES : Renders every admin operations page and table
+ * HOW IT DOES IT      : Loads backend data, renders page-specific tables, and opens detail modals
+ * DATA SOURCE         : Backend API and authenticated admin context
  * DATA DESTINATION    : React admin dashboard UI
  * PRINCIPLE APPLIED   : KISS
  * ============================================================================
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   BarChart3,
@@ -43,10 +44,10 @@ import { useAuth } from '../../../contexts/AuthContext';
 import {
   formatDate,
   formatRwf,
-  getMockAdminData,
-  type MockAdminData,
   type UploadedDocumentRecord,
-} from '../../../data/mockAdminService';
+} from '../../../data/adminTypes';
+import { getAdminDashboardData } from '../../../data/adminApiService';
+import { api } from '../../../lib/api';
 
 export type PageKind =
   | 'overview'
@@ -75,6 +76,18 @@ type DetailModalState = {
   fields: DetailField[];
   documents: UploadedDocumentRecord[];
 } | null;
+type ProfileFormState = {
+  name: string;
+  username: string;
+  phone: string;
+  avatar: string;
+};
+type PasswordFormState = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+  revokeOtherSessions: boolean;
+};
 
 const PAGE_SIZE = 6;
 
@@ -275,6 +288,13 @@ const DataTable: React.FC<{ title: string; headers: string[]; rows: React.ReactN
                 {row.map((cell, cellIndex) => <td key={cellIndex} className="px-4 py-3 align-top">{cell}</td>)}
               </tr>
             ))}
+            {visibleRows.length === 0 && (
+              <tr className="border-t border-gray-50">
+                <td className="px-4 py-6 text-center text-sm font-semibold text-gray-500" colSpan={headers.length}>
+                  No backend records found for this table.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -289,15 +309,20 @@ const DataTable: React.FC<{ title: string; headers: string[]; rows: React.ReactN
   );
 };
 
-const useMockData = () => {
-  const [data, setData] = useState<MockAdminData | null>(null);
-  const [error, setError] = useState('');
+const useAdminData = () => {
+  const query = useQuery({
+    queryKey: ['admin-dashboard-data'],
+    queryFn: getAdminDashboardData,
+  });
 
-  useEffect(() => {
-    getMockAdminData().then(setData).catch((err: Error) => setError(err.message));
-  }, []);
-
-  return { data, error };
+  return {
+    data: query.data ?? null,
+    error: query.error instanceof Error ? query.error.message : '',
+    isLoading: query.isLoading,
+    refreshData: async () => {
+      await query.refetch();
+    },
+  };
 };
 
 const capabilities: Record<PageKind, string[]> = {
@@ -317,9 +342,24 @@ const capabilities: Record<PageKind, string[]> = {
 };
 
 const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
-  const { data, error } = useMockData();
-  const { user } = useAuth();
+  const { data, error, isLoading, refreshData } = useAdminData();
+  const { user, refreshUser } = useAuth();
   const [detail, setDetail] = useState<DetailModalState>(null);
+  const [actionBusy, setActionBusy] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [profileForm, setProfileForm] = useState<ProfileFormState>({
+    name: '',
+    username: '',
+    phone: '',
+    avatar: '',
+  });
+  const [passwordForm, setPasswordForm] = useState<PasswordFormState>({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+    revokeOtherSessions: true,
+  });
 
   const stats = useMemo(() => {
     if (!data) return null;
@@ -332,8 +372,58 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
     };
   }, [data]);
 
+  const priorityRows = useMemo(() => {
+    if (!data) return [];
+
+    return [
+      ...data.kycDocuments
+        .filter(item => item.status === 'PENDING')
+        .slice(0, 2)
+        .map(item => ({
+          area: 'KYC',
+          item: `${item.userName} - ${item.documentType}`,
+          status: item.status,
+          owner: item.role,
+        })),
+      ...data.transactions
+        .filter(item => !['COMPLETED', 'PAID', 'RELEASED'].includes(item.status))
+        .slice(0, 2)
+        .map(item => ({
+          area: 'Escrow',
+          item: `${item.type.replaceAll('_', ' ')} - ${item.project}`,
+          status: item.status,
+          owner: item.party,
+        })),
+      ...data.disputes
+        .filter(item => !item.status.includes('RESOLVED'))
+        .slice(0, 2)
+        .map(item => ({
+          area: 'Dispute',
+          item: item.summary || item.category,
+          status: item.status,
+          owner: item.openedBy,
+        })),
+    ].slice(0, 6);
+  }, [data]);
+
+  const profileUser = useMemo(() => {
+    if (!data) return user;
+    return data.users.find(item => item.id === user?.id) ?? data.users.find(item => item.role === 'ADMIN') ?? user;
+  }, [data, user]);
+
+  useEffect(() => {
+    if (page !== 'profile' || !profileUser) return;
+
+    setProfileForm({
+      name: profileUser.name || '',
+      username: profileUser.username || '',
+      phone: profileUser.phone || '',
+      avatar: profileUser.avatar || '',
+    });
+  }, [page, profileUser]);
+
   if (error) return <div className="rounded-lg border border-rose-100 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{error}</div>;
-  if (!data || !stats) return <div className="h-48 animate-pulse rounded-lg bg-gray-100" />;
+  if (isLoading || !data || !stats) return <div className="h-48 animate-pulse rounded-lg bg-gray-100" />;
 
   const getDocuments = (entityType: string, entityId: string) =>
     data.uploadedDocuments.filter(document => document.entityType === entityType && document.entityId === entityId);
@@ -342,9 +432,86 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
     setDetail({ title, subtitle, fields, documents });
   };
 
+  const runAdminAction = async (key: string, action: () => Promise<unknown>, success: string) => {
+    setActionBusy(key);
+    setActionError('');
+    setActionMessage('');
+
+    try {
+      await action();
+      setActionMessage(success);
+      await refreshData();
+    } catch (err: any) {
+      setActionError(err?.response?.data?.message || err?.message || 'Action failed');
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const createAdminNotification = (userId: string, title: string, body: string, dataPayload: Record<string, string>) =>
+    api.post('/api/v1/notifications', {
+      userId,
+      channel: 'in_app',
+      title,
+      body,
+      data: dataPayload,
+    });
+
+  const logAdminAction = (action: string, metadata: Record<string, unknown>) =>
+    api.post('/api/v1/activity-logs', {
+      action,
+      metadata,
+    });
+
+  const updateProfile = () =>
+    runAdminAction('profile-save', async () => {
+      if (!profileUser?.id) throw new Error('No current admin user found');
+
+      const payload = {
+        name: profileForm.name.trim(),
+        username: profileForm.username.trim() || null,
+        displayUsername: profileForm.username.trim() || null,
+        phoneNumber: profileForm.phone.trim() || null,
+        image: profileForm.avatar.trim() || null,
+      };
+
+      await api.post('/api/v1/auth/update-user', payload);
+      await api.put(`/api/v1/users/${profileUser.id}`, payload);
+      await refreshUser();
+      await refreshData();
+    }, 'Profile updated successfully.');
+
+  const changePassword = () =>
+    runAdminAction('profile-password', async () => {
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+        throw new Error('New password and confirm password must match');
+      }
+
+      if (passwordForm.newPassword.length < 8) {
+        throw new Error('New password must be at least 8 characters');
+      }
+
+      await api.post('/api/v1/auth/change-password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+        revokeOtherSessions: passwordForm.revokeOtherSessions,
+      });
+
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+        revokeOtherSessions: true,
+      });
+      await refreshUser();
+      await refreshData();
+    }, 'Password changed successfully.');
+
   const section = (icon: React.ReactNode, title: string, subtitle: string, children: React.ReactNode) => (
     <div className="space-y-5 pb-12">
       <SectionHeader icon={icon} title={title} subtitle={subtitle} capabilities={capabilities[page]} />
+      {actionError && <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{actionError}</div>}
+      {actionMessage && <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{actionMessage}</div>}
       {children}
       <DetailModal detail={detail} onClose={() => setDetail(null)} />
     </div>
@@ -360,15 +527,12 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
           <StatTile label="Escrow" value={formatRwf(stats.escrowTotal)} icon={<Landmark size={18} />} />
           <StatTile label="Unread Alerts" value={stats.unreadNotifications} icon={<Bell size={18} />} />
         </div>
-        <DataTable title="Priority Operations" headers={['Area', 'Item', 'Status', 'Owner']} exportRowsData={[
-          { area: 'KYC', item: 'High-risk supplier KYC pending', status: 'PENDING', owner: 'Operations Reviewer' },
-          { area: 'Escrow', item: 'Milestone payment awaiting approval', status: 'PENDING_CLIENT_APPROVAL', owner: 'Finance' },
-          { area: 'Dispute', item: 'Roofing material dispute', status: 'OPEN', owner: 'Admin Mediation' },
-        ]} rows={[
-          ['KYC', 'High-risk supplier KYC pending', <Badge value="PENDING" />, 'Operations Reviewer'],
-          ['Escrow', 'Milestone payment awaiting approval', <Badge value="PENDING_CLIENT_APPROVAL" />, 'Finance'],
-          ['Dispute', 'Roofing material dispute', <Badge value="OPEN" />, 'Admin Mediation'],
-        ]} />
+        <DataTable
+          title="Priority Operations"
+          headers={['Area', 'Item', 'Status', 'Owner']}
+          exportRowsData={priorityRows}
+          rows={priorityRows.map(item => [item.area, item.item, <Badge value={item.status} />, item.owner])}
+        />
       </>
     ));
   }
@@ -387,9 +551,9 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
             { label: 'Submitted', value: formatDate(item.submittedAt) },
             { label: 'Expires', value: formatDate(item.expiresAt) },
           ], getDocuments('kyc', item.id))} />
-          <button className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white">Approve</button>
-          <button className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">Request docs</button>
-          <button className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">Reject</button>
+          <button disabled={actionBusy === `kyc-approve-${item.id}`} onClick={() => runAdminAction(`kyc-approve-${item.id}`, () => api.post(`/api/v1/kyc/${item.userId}/approve`, { reviewNote: 'Approved from admin web' }), 'KYC approved successfully.')} className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white disabled:opacity-50">Approve</button>
+          <button disabled={actionBusy === `kyc-docs-${item.id}`} onClick={() => runAdminAction(`kyc-docs-${item.id}`, () => createAdminNotification(item.userId, 'KYC documents requested', 'Please upload clearer or updated KYC documents.', { type: 'kyc_documents_requested', documentId: item.id }), 'Additional KYC documents requested.')} className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 disabled:opacity-50">Request docs</button>
+          <button disabled={actionBusy === `kyc-reject-${item.id}`} onClick={() => runAdminAction(`kyc-reject-${item.id}`, () => api.post(`/api/v1/kyc/${item.userId}/reject`, { reason: 'Rejected from admin web review', documentIds: [item.id] }), 'KYC rejected successfully.')} className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 disabled:opacity-50">Reject</button>
         </div>,
       ])} />
     ));
@@ -401,7 +565,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
       <DataTable title="All Users" headers={['User', 'Contact', 'Role', 'KYC', 'Status', 'Actions']} exportRowsData={rows} rows={data.users.map(item => [
         <strong>{item.name}</strong>, <div><p>{item.email}</p><p className="text-xs text-gray-500">{item.phone}</p></div>, item.role, <Badge value={item.kycStatus} />, <Badge value={item.status} />,
         <div className="flex flex-wrap gap-2">
-          <ViewButton label="Profile" onClick={() => openDetail(`User: ${item.name}`, 'Complete user profile snapshot from mock admin data.', [
+          <ViewButton label="Profile" onClick={() => openDetail(`User: ${item.name}`, 'Complete user profile snapshot from backend admin data.', [
             { label: 'Email', value: item.email },
             { label: 'Phone', value: item.phone },
             { label: 'Username', value: item.username },
@@ -409,8 +573,15 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
             { label: 'KYC', value: <Badge value={item.kycStatus} /> },
             { label: 'Status', value: <Badge value={item.status} /> },
           ], data.uploadedDocuments.filter(document => document.uploadedBy === item.name))} />
-          <button className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold">Reset</button>
-          <button className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">Suspend</button>
+          <button disabled={actionBusy === `reset-${item.id}`} onClick={() => runAdminAction(`reset-${item.id}`, () => createAdminNotification(item.id, 'Password reset requested', 'An admin requested that you reset your password.', { type: 'password_reset_requested' }), 'Password reset request sent.')} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold disabled:opacity-50">Reset</button>
+          <button disabled={actionBusy === `suspend-${item.id}`} onClick={() => {
+            const shouldSuspend = item.status !== 'SUSPENDED';
+            return runAdminAction(`suspend-${item.id}`, () => api.put(`/api/v1/users/${item.id}`, {
+              banned: shouldSuspend,
+              banReason: shouldSuspend ? 'Suspended from admin web' : null,
+              banExpires: null,
+            }), shouldSuspend ? 'User suspended successfully.' : 'User activated successfully.');
+          }} className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 disabled:opacity-50">{item.status === 'SUSPENDED' ? 'Activate' : 'Suspend'}</button>
         </div>,
       ])} />
     ));
@@ -430,8 +601,13 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
             { label: 'Budget', value: formatRwf(item.budget) },
             { label: 'Progress', value: `${item.progress}%` },
           ], getDocuments('project', item.id))} />
-          <button className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold">Gantt</button>
-          <button className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">Override</button>
+          <button onClick={() => openDetail(`Gantt: ${item.name}`, 'Milestone progress loaded from the backend project timeline.', [
+            { label: 'Project', value: item.name },
+            { label: 'Milestones', value: item.milestones },
+            { label: 'Progress', value: `${item.progress}%` },
+            { label: 'Status', value: <Badge value={item.status} /> },
+          ], getDocuments('project', item.id))} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold">Gantt</button>
+          <button disabled={actionBusy === `project-override-${item.id}`} onClick={() => runAdminAction(`project-override-${item.id}`, () => api.patch(`/api/v1/projects/${item.id}/status`, { status: item.status === 'PAUSED' ? 'active' : 'paused' }), 'Project status overridden successfully.')} className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 disabled:opacity-50">Override</button>
         </div>,
       ])} />
     ));
@@ -445,7 +621,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
           <StatTile label="Escrow Held" value={formatRwf(stats.escrowTotal)} icon={<Lock size={18} />} />
           <StatTile label="Transactions" value={data.transactions.length} icon={<FileText size={18} />} />
           <StatTile label="Open Disputes" value={stats.openDisputes} icon={<Scale size={18} />} />
-          <StatTile label="Provider Health" value="MTN OK" icon={<CheckCircle size={18} />} />
+          <StatTile label="Provider Records" value={data.transactions.length > 0 ? 'Loaded' : 'No records'} icon={<CheckCircle size={18} />} />
         </div>
         <DataTable title="Append-only Transaction History" headers={['Transaction', 'Project', 'Type', 'Party', 'Amount', 'Status', 'Action']} exportRowsData={rows} rows={data.transactions.map(item => [item.id, item.project, item.type.replaceAll('_', ' '), item.party, formatRwf(item.amount), <Badge value={item.status} />, <ViewButton onClick={() => openDetail(`Transaction: ${item.id}`, 'Append-only transaction record for reconciliation review.', [
           { label: 'Project', value: item.project },
@@ -471,7 +647,10 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
           { label: 'Status', value: <Badge value={item.status} /> },
           { label: 'Created', value: formatDate(item.createdAt) },
         ], getDocuments('dispute', item.id))} />
-        <button className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white">Resolve</button>
+        <button disabled={actionBusy === `resolve-${item.id}`} onClick={() => runAdminAction(`resolve-${item.id}`, () => api.put(`/api/v1/disputes/${item.id}`, {
+          status: 'resolved_partial',
+          resolution: { note: 'Resolved from admin web' },
+        }), 'Dispute resolved successfully.')} className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white disabled:opacity-50">Resolve</button>
       </div>])} />
     ));
   }
@@ -555,13 +734,13 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
     const rows = data.auditLogs.map(item => ({ actor: item.actor, action: item.action, target: item.target, severity: item.severity, date: formatDate(item.createdAt) }));
     return section(<ScrollText size={20} />, 'Audit & Compliance', 'Search audit logs, security events, session history, API usage, and tamper-chain verification.', (
       <>
-        <DataTable title="System Audit Log" headers={['Actor', 'Action', 'Target', 'Severity', 'Action']} exportRowsData={rows} rows={data.auditLogs.map(item => [item.actor, item.action.replaceAll('_', ' '), item.target, <Badge value={item.severity} />, <ViewButton onClick={() => openDetail(`Audit: ${item.id}`, 'Compliance event details and tamper-chain placeholder.', [
+        <DataTable title="System Audit Log" headers={['Actor', 'Action', 'Target', 'Severity', 'Action']} exportRowsData={rows} rows={data.auditLogs.map(item => [item.actor, item.action.replaceAll('_', ' '), item.target, <Badge value={item.severity} />, <ViewButton onClick={() => openDetail(`Audit: ${item.id}`, 'Compliance event details from the backend audit trail.', [
           { label: 'Actor', value: item.actor },
           { label: 'Action', value: item.action.replaceAll('_', ' ') },
           { label: 'Target', value: item.target },
           { label: 'Severity', value: <Badge value={item.severity} /> },
           { label: 'Date', value: formatDate(item.createdAt) },
-          { label: 'Tamper chain', value: 'SHA-256 placeholder: verified' },
+          { label: 'Record source', value: 'Backend audit log' },
         ], [])} />])} />
         <DataTable title="Security Events" headers={['Event', 'Actor', 'Severity', 'IP', 'Action']} exportRowsData={data.securityEvents.map(item => ({ ...item, createdAt: formatDate(item.createdAt) }))} rows={data.securityEvents.map(item => [item.event.replaceAll('_', ' '), item.actor, <Badge value={item.severity} />, item.ip, <ViewButton onClick={() => openDetail(`Security event: ${item.id}`, 'Security event details for compliance review.', [
           { label: 'Event', value: item.event.replaceAll('_', ' ') },
@@ -569,7 +748,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
           { label: 'Severity', value: <Badge value={item.severity} /> },
           { label: 'IP address', value: item.ip },
           { label: 'Created', value: formatDate(item.createdAt) },
-          { label: 'Status', value: 'Reviewed in mock mode' },
+          { label: 'Status', value: 'Loaded from backend security events' },
         ], [])} />])} />
       </>
     ));
@@ -585,32 +764,99 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
           { label: 'Timestamp', value: formatDate(item.timestamp) },
           { label: 'Route', value: item.link },
         ], [])} />
-        <button className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold">Resend</button>
+        <button disabled={actionBusy === `resend-${item.id}`} onClick={() => runAdminAction(`resend-${item.id}`, () => {
+          if (!item.userId) throw new Error('Notification has no user to resend to');
+          return api.post('/api/v1/notifications', {
+            userId: item.userId,
+            channel: item.channel || item.type || 'in_app',
+            title: item.title,
+            body: item.body,
+            data: { resendOf: item.id, type: 'notification_resend' },
+          });
+        }, 'Notification resent successfully.')} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold disabled:opacity-50">Resend</button>
       </div>])} />
     ));
   }
 
   if (page === 'profile') {
-    const currentAdmin = data.users.find(item => item.id === user?.id) ?? data.users.find(item => item.role === 'ADMIN');
+    const profileSessions = data.adminSessions.filter(item => item.admin === profileUser?.name);
+    const visibleSessions = profileSessions.length > 0 ? profileSessions : data.adminSessions;
+
     return section(<UserCog size={20} />, 'Admin Profile & Access', 'Manage your admin profile, 2FA readiness, sessions, password controls, and personal audit trail.', (
       <>
-        <div className="grid gap-3 lg:grid-cols-3">
-          <div className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm lg:col-span-1">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-lg font-black text-white">{currentAdmin?.name.charAt(0)}</div>
-            <h2 className="text-lg font-bold text-gray-900">{currentAdmin?.name}</h2>
-            <p className="text-sm text-gray-500">{currentAdmin?.email}</p>
+        <div className="grid gap-3 xl:grid-cols-3">
+          <div className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
+            {profileForm.avatar ? (
+              <img src={profileForm.avatar} alt={profileUser?.name || 'Admin user'} className="mb-4 h-16 w-16 rounded-full object-cover" />
+            ) : (
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand text-lg font-black text-white">{profileUser?.name?.charAt(0) || 'A'}</div>
+            )}
+            <h2 className="text-lg font-bold text-gray-900">{profileUser?.name || 'Admin user'}</h2>
+            <p className="text-sm text-gray-500">{profileUser?.email || 'No email loaded'}</p>
             <div className="mt-4 space-y-2 text-sm">
-              <p><span className="font-semibold">Role:</span> ADMIN</p>
-              <p><span className="font-semibold">2FA:</span> Ready for TOTP setup</p>
+              <p><span className="font-semibold">Role:</span> {profileUser?.role || 'ADMIN'}</p>
+              <p><span className="font-semibold">Email:</span> Managed by Better Auth</p>
               <p><span className="font-semibold">Access:</span> Admin portal only</p>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white">Change password</button>
-              <button className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold">Enable 2FA</button>
+            <div className="mt-4">
+              <button disabled={actionBusy === 'profile-2fa'} onClick={() => runAdminAction('profile-2fa', () => logAdminAction('totp_setup_requested', { source: 'admin_web' }), '2FA setup request recorded.')} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold disabled:opacity-50">Record 2FA setup request</button>
             </div>
           </div>
-          <div className="lg:col-span-2">
-            <DataTable title="Active Admin Sessions" headers={['Session', 'Admin', 'Device', 'IP', 'Status', 'Last Seen']} exportRowsData={data.adminSessions.map(item => ({ ...item, lastSeen: formatDate(item.lastSeen) }))} rows={data.adminSessions.map(item => [item.id, item.admin, item.device, item.ip, <Badge value={item.status} />, formatDate(item.lastSeen)])} />
+
+          <div className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm xl:col-span-2">
+            <h2 className="text-base font-bold text-gray-900">Profile details</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                Full name
+                <input value={profileForm.name} onChange={event => setProfileForm(current => ({ ...current, name: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                Username
+                <input value={profileForm.username} onChange={event => setProfileForm(current => ({ ...current, username: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                Phone number
+                <input value={profileForm.phone} onChange={event => setProfileForm(current => ({ ...current, phone: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                Avatar URL
+                <input value={profileForm.avatar} onChange={event => setProfileForm(current => ({ ...current, avatar: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-gray-700 md:col-span-2">
+                Email address
+                <input value={profileUser?.email || ''} disabled className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button disabled={actionBusy === 'profile-save'} onClick={updateProfile} className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Save profile</button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm xl:col-span-1">
+            <h2 className="text-base font-bold text-gray-900">Password</h2>
+            <div className="mt-4 space-y-3">
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                Current password
+                <input type="password" value={passwordForm.currentPassword} onChange={event => setPasswordForm(current => ({ ...current, currentPassword: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                New password
+                <input type="password" value={passwordForm.newPassword} onChange={event => setPasswordForm(current => ({ ...current, newPassword: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-gray-700">
+                Confirm password
+                <input type="password" value={passwordForm.confirmPassword} onChange={event => setPasswordForm(current => ({ ...current, confirmPassword: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
+              </label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <input type="checkbox" checked={passwordForm.revokeOtherSessions} onChange={event => setPasswordForm(current => ({ ...current, revokeOtherSessions: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand" />
+                Sign out other sessions
+              </label>
+              <button disabled={actionBusy === 'profile-password'} onClick={changePassword} className="w-full rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Change password</button>
+            </div>
+          </div>
+
+          <div className="xl:col-span-2">
+            <DataTable title="Active Admin Sessions" headers={['Session', 'Admin', 'Device', 'IP', 'Status', 'Last Seen']} exportRowsData={visibleSessions.map(item => ({ ...item, lastSeen: formatDate(item.lastSeen) }))} rows={visibleSessions.map(item => [item.id, item.admin, item.device, item.ip, <Badge value={item.status} />, formatDate(item.lastSeen)])} />
           </div>
         </div>
       </>
@@ -629,7 +875,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
       </div>
       <div className="rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
         <AlertTriangle className="mb-2" size={18} />
-        These controls are mock-only. Wire them to authenticated admin APIs when the backend is ready.
+        These settings are loaded from the authenticated backend admin APIs.
       </div>
     </>
   ));

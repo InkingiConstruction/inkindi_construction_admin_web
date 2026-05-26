@@ -5,15 +5,27 @@
  * FILE NAME        : main.tsx
  * WHAT THIS FILE DOES : Supports the InkingiPro admin web portal
  * HOW IT DOES IT      : Uses focused TypeScript and React code for one responsibility
- * DATA SOURCE         : Local props, context, mock data, or user input as applicable
+ * DATA SOURCE         : Local props, context, backend data, or user input as applicable
  * DATA DESTINATION    : Admin portal UI, context state, or exported helpers
  * PRINCIPLE APPLIED   : SOLID
  * ============================================================================
  */
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import App from "./App.tsx";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 /**
  * ============================================================================
@@ -26,8 +38,11 @@ import App from './App.tsx'
  * PRINCIPLE: KISS
  * ============================================================================
  */
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   </StrictMode>,
-)
+);
