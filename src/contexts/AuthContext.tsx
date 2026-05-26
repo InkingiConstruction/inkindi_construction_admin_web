@@ -1,25 +1,27 @@
-/**
- * ============================================================================
- * FILE HEADER COMMENT
- * ============================================================================
- * FILE NAME        : AuthContext.tsx
- * WHAT THIS FILE DOES : Provides shared admin portal state through React context
- * HOW IT DOES IT      : Uses focused TypeScript and React code for one responsibility
- * DATA SOURCE         : Local props, context, mock data, or user input as applicable
- * DATA DESTINATION    : Admin portal UI, context state, or exported helpers
- * PRINCIPLE APPLIED   : SOLID
- * ============================================================================
- */
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { User } from '../shared/types';
-import { encrypt, decrypt } from '../shared/utils/encryption';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { Role, User } from '../shared/types';
+import { authClient } from '../lib/auth-client';
+import { mapBackendRole } from '../lib/api';
+
+interface BackendUser {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  username?: string | null;
+  displayUsername?: string | null;
+  phoneNumber?: string | null;
+  image?: string | null;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+}
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (token: string, user: User) => void;
-  logout: () => void;
+  login: (token: string | null, user: User) => void;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
   isLoading: boolean;
   refreshUser: () => Promise<void>;
@@ -27,75 +29,81 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const mapBackendUser = (backendUser: BackendUser): User => ({
+  id: backendUser.id,
+  name: backendUser.name,
+  email: backendUser.email,
+  username: backendUser.username || backendUser.displayUsername || '',
+  phone: backendUser.phoneNumber || '',
+  role: mapBackendRole(backendUser.role) as Role,
+  avatar: backendUser.image || undefined,
+  createdAt: backendUser.createdAt
+    ? new Date(backendUser.createdAt).toISOString()
+    : new Date().toISOString(),
+  updatedAt: backendUser.updatedAt
+    ? new Date(backendUser.updatedAt).toISOString()
+    : new Date().toISOString(),
+});
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const refreshUser = async () => {
+    const session = await authClient.getSession();
+    const sessionUser = session.data?.user as BackendUser | undefined;
+
+    if (!sessionUser) {
+      setUser(null);
+      setToken(null);
+      return;
+    }
+
+    setUser(mapBackendUser(sessionUser));
+    setToken(session.data?.session?.token || 'cookie-session');
   };
 
-  // Initialize Auth: Check encrypted localStorage only in mock mode.
   useEffect(() => {
     const initAuth = async () => {
-      const encryptedToken = localStorage.getItem('token');
-      const encryptedUser = localStorage.getItem('user');
-
-      if (encryptedToken && encryptedUser) {
-        try {
-          const decryptedToken = decrypt(encryptedToken);
-          const decryptedUser = decrypt(encryptedUser);
-          
-          if (decryptedToken && decryptedUser) {
-            const parsedUser = JSON.parse(decryptedUser);
-            setToken(decryptedToken);
-            setUser(parsedUser);
-          }
-        } catch {
-          logout();
-        }
+      try {
+        await refreshUser();
+      } catch {
+        setUser(null);
+        setToken(null);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     initAuth();
   }, []);
 
-  const refreshUser = async () => {
-    const encryptedUser = localStorage.getItem('user');
-    if (encryptedUser) {
-      const decryptedUser = decrypt(encryptedUser);
-      if (decryptedUser) {
-        setUser(JSON.parse(decryptedUser));
-      }
-    }
+  const login = (newToken: string | null, newUser: User) => {
+    setToken(newToken || 'cookie-session');
+    setUser(newUser);
   };
 
-  const login = (newToken: string, newUser: User) => {
-    const encryptedToken = encrypt(newToken);
-    const encryptedUser = encrypt(JSON.stringify(newUser));
-    
-    setToken(newToken);
-    setUser(newUser);
-    
-    localStorage.setItem('token', encryptedToken);
-    localStorage.setItem('user', encryptedUser);
+  const logout = async () => {
+    await authClient.signOut();
+    setToken(null);
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      token, 
-      login, 
-      logout, 
-      isAuthenticated: !!token, 
-      isLoading,
-      refreshUser
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        login,
+        logout,
+        isAuthenticated: Boolean(user),
+        isLoading,
+        refreshUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

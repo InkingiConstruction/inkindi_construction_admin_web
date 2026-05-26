@@ -134,7 +134,7 @@ const LoginPage: React.FC = () => {
           <div className="mb-6">
             <h2 className="text-xl text-black/80 mb-1">Sign in to admin</h2>
             <p className="text-xs text-gray-500">
-              Mock credentials: admin@inkingipro.rw / Admin@12345
+              Use an active admin account from the InkingiPro backend.
             </p>
           </div>
 
@@ -215,7 +215,7 @@ const LoginPage: React.FC = () => {
 
 
           <p className="mt-6 text-start text-sm text-gray-600 font-medium">
-            Admin access is restricted. Accounts are loaded from the local mock JSON file.
+            Admin access is restricted to users with the admin role.
           </p>
         </div>
       </motion.div>
