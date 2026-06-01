@@ -4,7 +4,7 @@ export const API_BASE_URL = import.meta.env.VITE_APP_BASE_URL;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
+  withCredentials: false,
   headers: {
     "Content-Type": "application/json",
   },
@@ -12,6 +12,12 @@ export const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem("inkingi_admin_token");
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
     console.log(`Making request to: ${config.url}`);
     return config;
   },
@@ -45,8 +51,18 @@ export const mapBackendRole = (role?: string) => {
 
 export const apiFormData = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
+  withCredentials: false,
   headers: {
     "Content-Type": "multipart/form-data",
   },
+});
+
+apiFormData.interceptors.request.use((config) => {
+  const token = localStorage.getItem("inkingi_admin_token");
+
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  return config;
 });

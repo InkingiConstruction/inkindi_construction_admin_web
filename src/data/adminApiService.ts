@@ -1,6 +1,5 @@
 import { api } from '../lib/api';
 import type {
-  AdminSessionRecord,
   AuditLogRecord,
   DeliveryRecord,
   DisputeRecord,
@@ -231,15 +230,6 @@ const mapNotification = (notification: AnyRecord): NotificationRecord => ({
   link: '/dashboard/notifications',
 });
 
-const mapSession = (session: AnyRecord): AdminSessionRecord => ({
-  id: session.id,
-  admin: formatName(session.user),
-  device: session.userAgent || 'Unknown device',
-  ip: session.ipAddress || 'Unknown IP',
-  status: new Date(session.expiresAt) > new Date() ? 'ACTIVE' : 'EXPIRED',
-  lastSeen: safeDate(session.updatedAt || session.createdAt),
-});
-
 export const getAdminDashboardData = async (): Promise<AdminDashboardData> => {
   const [
     users,
@@ -252,7 +242,6 @@ export const getAdminDashboardData = async (): Promise<AdminDashboardData> => {
     inspections,
     auditLogs,
     notifications,
-    sessions,
     systemSettings,
   ] = await Promise.all([
     requestList('/api/v1/users', ['users'], true),
@@ -265,7 +254,6 @@ export const getAdminDashboardData = async (): Promise<AdminDashboardData> => {
     requestList('/api/v1/inspections', ['inspections']),
     requestList('/api/v1/audit-logs', ['auditLogs', 'activityLogs']),
     requestList('/api/v1/notifications', ['notifications']),
-    requestList('/api/v1/sessions', ['sessions']),
     requestList('/api/v1/system-settings', ['systemSettings', 'settings']),
   ]);
 
@@ -284,7 +272,7 @@ export const getAdminDashboardData = async (): Promise<AdminDashboardData> => {
     inspections: inspections.map(mapInspection),
     auditLogs: auditLogs.map(mapAuditLog),
     notifications: notifications.map(mapNotification),
-    adminSessions: sessions.map(mapSession),
+    adminSessions: [],
     securityEvents: auditLogs.map((auditLog) => ({
       id: auditLog.id,
       event: auditLog.action,
@@ -296,8 +284,8 @@ export const getAdminDashboardData = async (): Promise<AdminDashboardData> => {
     uploadedDocuments,
     systemSettings: {
       rateLimit: findSettingValue(systemSettings, 'rateLimit') || 'Not configured',
-      jwtAccessExpiry: findSettingValue(systemSettings, 'jwtAccessExpiry') || 'Better Auth managed',
-      jwtRefreshExpiry: findSettingValue(systemSettings, 'jwtRefreshExpiry') || 'Better Auth managed',
+      jwtAccessExpiry: findSettingValue(systemSettings, 'jwtAccessExpiry') || 'JWT managed by backend',
+      jwtRefreshExpiry: findSettingValue(systemSettings, 'jwtRefreshExpiry') || 'JWT managed by backend',
       mtnSandbox: Boolean(findSettingValue(systemSettings, 'mtnSandbox')),
       cloudinaryUploads: Boolean(findSettingValue(systemSettings, 'cloudinaryUploads')),
       emailQueue: findSettingValue(systemSettings, 'emailQueue') || 'Not configured',
