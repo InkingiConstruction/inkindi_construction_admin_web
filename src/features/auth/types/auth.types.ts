@@ -5,7 +5,7 @@
  * FILE NAME        : auth.types.ts
  * WHAT THIS FILE DOES : Defines TypeScript types for admin authentication
  * HOW IT DOES IT      : Exports small interfaces consumed by login helpers
- * DATA SOURCE         : User-entered login form values and Better Auth backend
+ * DATA SOURCE         : User-entered login form values and JWT auth backend
  * DATA DESTINATION    : Auth hooks and context login function
  * PRINCIPLE APPLIED   : SOLID
  * ============================================================================

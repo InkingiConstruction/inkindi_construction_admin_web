@@ -48,7 +48,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If role-based access is required, a restored session must include an allowed user role.
+  // If role-based access is required, the restored profile must include an allowed user role.
   if (allowedRoles && (!user || !allowedRoles.includes(user.role))) {
     return <Navigate to="/login" replace />;
   }

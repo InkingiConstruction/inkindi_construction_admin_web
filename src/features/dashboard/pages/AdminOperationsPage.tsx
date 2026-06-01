@@ -86,7 +86,6 @@ type PasswordFormState = {
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
-  revokeOtherSessions: boolean;
 };
 
 const PAGE_SIZE = 6;
@@ -338,7 +337,7 @@ const capabilities: Record<PageKind, string[]> = {
   audit: ['View complete audit log', 'Search by user/action/entity', 'Export logs', 'Verify tamper chain', 'View security events', 'Monitor API key usage'],
   notifications: ['Send broadcasts', 'Target users by role', 'Edit email templates', 'View queue status', 'Track delivery logs', 'Resend failed notifications'],
   settings: ['Edit JSONB settings', 'Configure fees', 'Manage feature flags', 'Trigger backups', 'Monitor environment health', 'Set maintenance mode'],
-  profile: ['Secure admin profile', 'Enable TOTP 2FA', 'View active sessions', 'Force logout sessions', 'Change password', 'View own audit trail'],
+  profile: ['Secure admin profile', 'Enable TOTP 2FA', 'Update profile details', 'Change password', 'View own audit trail'],
 };
 
 const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
@@ -358,7 +357,6 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
-    revokeOtherSessions: true,
   });
 
   const stats = useMemo(() => {
@@ -475,7 +473,6 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
         image: profileForm.avatar.trim() || null,
       };
 
-      await api.post('/api/v1/auth/update-user', payload);
       await api.put(`/api/v1/users/${profileUser.id}`, payload);
       await refreshUser();
       await refreshData();
@@ -494,14 +491,12 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
       await api.post('/api/v1/auth/change-password', {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
-        revokeOtherSessions: passwordForm.revokeOtherSessions,
       });
 
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
-        revokeOtherSessions: true,
       });
       await refreshUser();
       await refreshData();
@@ -732,7 +727,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
 
   if (page === 'audit') {
     const rows = data.auditLogs.map(item => ({ actor: item.actor, action: item.action, target: item.target, severity: item.severity, date: formatDate(item.createdAt) }));
-    return section(<ScrollText size={20} />, 'Audit & Compliance', 'Search audit logs, security events, session history, API usage, and tamper-chain verification.', (
+    return section(<ScrollText size={20} />, 'Audit & Compliance', 'Search audit logs, security events, API usage, and tamper-chain verification.', (
       <>
         <DataTable title="System Audit Log" headers={['Actor', 'Action', 'Target', 'Severity', 'Action']} exportRowsData={rows} rows={data.auditLogs.map(item => [item.actor, item.action.replaceAll('_', ' '), item.target, <Badge value={item.severity} />, <ViewButton onClick={() => openDetail(`Audit: ${item.id}`, 'Compliance event details from the backend audit trail.', [
           { label: 'Actor', value: item.actor },
@@ -779,10 +774,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
   }
 
   if (page === 'profile') {
-    const profileSessions = data.adminSessions.filter(item => item.admin === profileUser?.name);
-    const visibleSessions = profileSessions.length > 0 ? profileSessions : data.adminSessions;
-
-    return section(<UserCog size={20} />, 'Admin Profile & Access', 'Manage your admin profile, 2FA readiness, sessions, password controls, and personal audit trail.', (
+    return section(<UserCog size={20} />, 'Admin Profile & Access', 'Manage your admin profile, 2FA readiness, password controls, and personal audit trail.', (
       <>
         <div className="grid gap-3 xl:grid-cols-3">
           <div className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
@@ -795,7 +787,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
             <p className="text-sm text-gray-500">{profileUser?.email || 'No email loaded'}</p>
             <div className="mt-4 space-y-2 text-sm">
               <p><span className="font-semibold">Role:</span> {profileUser?.role || 'ADMIN'}</p>
-              <p><span className="font-semibold">Email:</span> Managed by Better Auth</p>
+              <p><span className="font-semibold">Email:</span> Managed by JWT auth</p>
               <p><span className="font-semibold">Access:</span> Admin portal only</p>
             </div>
             <div className="mt-4">
@@ -847,16 +839,8 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
                 Confirm password
                 <input type="password" value={passwordForm.confirmPassword} onChange={event => setPasswordForm(current => ({ ...current, confirmPassword: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
               </label>
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <input type="checkbox" checked={passwordForm.revokeOtherSessions} onChange={event => setPasswordForm(current => ({ ...current, revokeOtherSessions: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand" />
-                Sign out other sessions
-              </label>
               <button disabled={actionBusy === 'profile-password'} onClick={changePassword} className="w-full rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Change password</button>
             </div>
-          </div>
-
-          <div className="xl:col-span-2">
-            <DataTable title="Active Admin Sessions" headers={['Session', 'Admin', 'Device', 'IP', 'Status', 'Last Seen']} exportRowsData={visibleSessions.map(item => ({ ...item, lastSeen: formatDate(item.lastSeen) }))} rows={visibleSessions.map(item => [item.id, item.admin, item.device, item.ip, <Badge value={item.status} />, formatDate(item.lastSeen)])} />
           </div>
         </div>
       </>
