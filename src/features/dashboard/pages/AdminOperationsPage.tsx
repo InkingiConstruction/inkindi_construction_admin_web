@@ -12,6 +12,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -19,6 +20,7 @@ import {
   Bell,
   Briefcase,
   CheckCircle,
+  MoreHorizontal,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -38,6 +40,7 @@ import {
   Wrench,
   Scale,
   ScrollText,
+  Loader2,
   X,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -110,6 +113,99 @@ const ViewButton: React.FC<{ label?: string; onClick: () => void }> = ({ label =
   >
     <Eye size={13} />
     {label}
+  </button>
+);
+
+const ActionsMenuButton: React.FC<{
+  menuId: string;
+  isOpen: boolean;
+  onToggle: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  size?: 'sm' | 'md';
+}> = ({ menuId, isOpen, onToggle, size = 'md' }) => (
+  <button
+    type="button"
+    aria-haspopup="menu"
+    aria-expanded={isOpen}
+    aria-controls={`actions-menu-${menuId}`}
+    onClick={onToggle}
+    className={
+      size === 'sm'
+        ? 'inline-flex items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-bold text-gray-700 shadow-sm transition hover:bg-gray-100'
+        : 'flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-md transition hover:scale-105 hover:shadow-xl'
+    }
+  >
+    <MoreHorizontal size={size === 'sm' ? 16 : 18} />
+  </button>
+);
+
+const ActionsMenuPanel: React.FC<{
+  menuId: string;
+  isOpen: boolean;
+  position: { top: number; left: number };
+  onClose: () => void;
+  children: React.ReactNode;
+  widthClass?: string;
+  variant?: 'anchored' | 'centered';
+}> = ({ menuId, isOpen, position, onClose, children, widthClass = 'w-56', variant = 'anchored' }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[100] bg-black/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        id={`actions-menu-${menuId}`}
+        role="menu"
+        aria-modal="true"
+        className={
+          variant === 'centered'
+            ? `fixed left-1/2 top-1/2 z-[101] max-h-[min(70vh,420px)] w-[min(92vw,360px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl ring-1 ring-black/5`
+            : `fixed z-[101] max-h-[min(70vh,420px)] overflow-y-auto ${widthClass} rounded-2xl border border-gray-200 bg-white p-2 shadow-2xl ring-1 ring-black/5`
+        }
+        style={variant === 'centered' ? undefined : { top: `${position.top}px`, left: `${position.left}px` }}
+        onClick={event => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </>,
+    document.body
+  );
+};
+
+const ActionMenuItem: React.FC<{
+  busy: boolean;
+  onClick: () => void;
+  label: React.ReactNode;
+  className: string;
+}> = ({ busy, onClick, label, className }) => (
+  <button
+    type="button"
+    disabled={busy}
+    onClick={onClick}
+    className={`mb-2 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-bold transition last:mb-0 disabled:opacity-50 ${className}`}
+  >
+    <span>{label}</span>
+    {busy && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
   </button>
 );
 
@@ -216,9 +312,6 @@ const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle: 
           <h1 className="text-xl font-bold leading-tight text-gray-900 md:text-2xl">{title}</h1>
           <p className="max-w-3xl text-sm text-gray-500">{subtitle}</p>
         </div>
-      </div>
-      <div className="rounded-lg border border-brand-muted bg-brand-light px-3 py-2 text-xs font-semibold text-brand">
-        Admin only
       </div>
     </div>
     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -347,6 +440,36 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
   const [actionBusy, setActionBusy] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+
+  const toggleMenu = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    menuId: string,
+    menuWidth = 320,
+    estimatedHeight = 220
+  ) => {
+    event.stopPropagation();
+
+    if (activeMenu === menuId) {
+      setActiveMenu(null);
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const openBelow = spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove;
+    const top = openBelow
+      ? Math.min(rect.bottom + 8, window.innerHeight - estimatedHeight - 8)
+      : Math.max(8, rect.top - estimatedHeight - 8);
+
+    setMenuPosition({ top, left });
+    setActiveMenu(menuId);
+  };
+
+  const closeMenu = () => setActiveMenu(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>({
     name: '',
     username: '',
@@ -513,7 +636,7 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
   );
 
   if (page === 'overview') {
-    return section(<ShieldCheck size={20} />, 'Admin Overview', 'A mobile-first operations console for the full InkingiPro admin surface.', (
+    return section(<ShieldCheck size={20} />, 'Overview', 'Manage Projects Operations and users.', (
       <>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <StatTile label="Users" value={data.users.length} icon={<Users size={18} />} />
@@ -532,81 +655,595 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
     ));
   }
 
-  if (page === 'kyc') {
-    const rows = data.kycDocuments.map(item => ({ applicant: item.userName, role: item.role, document: item.documentType, risk: item.risk, status: item.status, submitted: formatDate(item.submittedAt), expires: formatDate(item.expiresAt) }));
-    return section(<ClipboardCheck size={20} />, 'KYC & Identity Verification', 'Review identity files, professional licenses, certificates, expiry risk, and compliance evidence.', (
-      <DataTable title="KYC Review Queue" headers={['Applicant', 'Role', 'Document', 'Risk', 'Status', 'Submitted', 'Actions']} exportRowsData={rows} rows={data.kycDocuments.map(item => [
-        <strong>{item.userName}</strong>, item.role, item.documentType, <Badge value={item.risk} />, <Badge value={item.status} />, formatDate(item.submittedAt),
-        <div className="flex flex-wrap gap-2">
-          <ViewButton onClick={() => openDetail(`KYC: ${item.userName}`, item.notes, [
-            { label: 'Role', value: item.role },
-            { label: 'Document type', value: item.documentType },
-            { label: 'Risk', value: <Badge value={item.risk} /> },
-            { label: 'Status', value: <Badge value={item.status} /> },
-            { label: 'Submitted', value: formatDate(item.submittedAt) },
-            { label: 'Expires', value: formatDate(item.expiresAt) },
-          ], getDocuments('kyc', item.id))} />
-          <button disabled={actionBusy === `kyc-approve-${item.id}`} onClick={() => runAdminAction(`kyc-approve-${item.id}`, () => api.post(`/api/v1/kyc/${item.userId}/approve`, { reviewNote: 'Approved from admin web' }), 'KYC approved successfully.')} className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white disabled:opacity-50">Approve</button>
-          <button disabled={actionBusy === `kyc-docs-${item.id}`} onClick={() => runAdminAction(`kyc-docs-${item.id}`, () => createAdminNotification(item.userId, 'KYC documents requested', 'Please upload clearer or updated KYC documents.', { type: 'kyc_documents_requested', documentId: item.id }), 'Additional KYC documents requested.')} className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 disabled:opacity-50">Request docs</button>
-          <button disabled={actionBusy === `kyc-reject-${item.id}`} onClick={() => runAdminAction(`kyc-reject-${item.id}`, () => api.post(`/api/v1/kyc/${item.userId}/reject`, { reason: 'Rejected from admin web review', documentIds: [item.id] }), 'KYC rejected successfully.')} className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 disabled:opacity-50">Reject</button>
-        </div>,
-      ])} />
-    ));
-  }
+if (page === 'kyc') {
+  const rows = data.kycDocuments.map(item => ({
+    applicant: item.userName,
+    role: item.role,
+    document: item.documentType,
+    risk: item.risk,
+    status: item.status,
+    submitted: formatDate(item.submittedAt),
+    expires: formatDate(item.expiresAt),
+  }));
 
-  if (page === 'users') {
-    const rows = data.users.map(item => ({ name: item.name, email: item.email, phone: item.phone, role: item.role, kyc: item.kycStatus, status: item.status, joined: formatDate(item.createdAt) }));
-    return section(<Users size={20} />, 'User Management', 'Manage admins, clients, engineers, supervisors, and suppliers while keeping mobile users outside the web dashboard.', (
-      <DataTable title="All Users" headers={['User', 'Contact', 'Role', 'KYC', 'Status', 'Actions']} exportRowsData={rows} rows={data.users.map(item => [
-        <strong>{item.name}</strong>, <div><p>{item.email}</p><p className="text-xs text-gray-500">{item.phone}</p></div>, item.role, <Badge value={item.kycStatus} />, <Badge value={item.status} />,
-        <div className="flex flex-wrap gap-2">
-          <ViewButton label="Profile" onClick={() => openDetail(`User: ${item.name}`, 'Complete user profile snapshot from backend admin data.', [
-            { label: 'Email', value: item.email },
-            { label: 'Phone', value: item.phone },
-            { label: 'Username', value: item.username },
-            { label: 'Role', value: item.role },
-            { label: 'KYC', value: <Badge value={item.kycStatus} /> },
-            { label: 'Status', value: <Badge value={item.status} /> },
-          ], data.uploadedDocuments.filter(document => document.uploadedBy === item.name))} />
-          <button disabled={actionBusy === `reset-${item.id}`} onClick={() => runAdminAction(`reset-${item.id}`, () => createAdminNotification(item.id, 'Password reset requested', 'An admin requested that you reset your password.', { type: 'password_reset_requested' }), 'Password reset request sent.')} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold disabled:opacity-50">Reset</button>
-          <button disabled={actionBusy === `suspend-${item.id}`} onClick={() => {
-            const shouldSuspend = item.status !== 'SUSPENDED';
-            return runAdminAction(`suspend-${item.id}`, () => api.put(`/api/v1/users/${item.id}`, {
-              banned: shouldSuspend,
-              banReason: shouldSuspend ? 'Suspended from admin web' : null,
-              banExpires: null,
-            }), shouldSuspend ? 'User suspended successfully.' : 'User activated successfully.');
-          }} className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 disabled:opacity-50">{item.status === 'SUSPENDED' ? 'Activate' : 'Suspend'}</button>
-        </div>,
-      ])} />
-    ));
-  }
+  return section(
+    <ClipboardCheck size={20} />,
+    'KYC & Identity Verification',
+    'Review identity files, professional licenses, certificates, expiry risk, and compliance evidence.',
+    (
+      <DataTable
+          title="KYC Review Queue"
+          headers={[
+            'Applicant',
+            'Role',
+            'Document',
+            'Risk',
+            'Status',
+            'Submitted',
+            'Actions',
+          ]}
+          exportRowsData={rows}
+          rows={data.kycDocuments.map(item => [
+            <strong>{item.userName}</strong>,
 
-  if (page === 'projects') {
-    const rows = data.projects.map(item => ({ project: item.name, client: item.client, engineer: item.engineer, supervisor: item.supervisor, location: item.location, budget: item.budget, progress: item.progress, status: item.status }));
-    return section(<Briefcase size={20} />, 'Project Portfolio Oversight', 'Audit project timelines, assignments, budgets, documents, photos, Gantt state, and contractor performance.', (
-      <DataTable title="Project Portfolio" headers={['Project', 'Team', 'Location', 'Budget', 'Progress', 'Status', 'Actions']} exportRowsData={rows} rows={data.projects.map(item => [
-        <strong>{item.name}</strong>, <div><p>{item.client}</p><p className="text-xs text-gray-500">{item.engineer} / {item.supervisor}</p></div>, item.location, formatRwf(item.budget), `${item.progress}%`, <Badge value={item.status} />,
-        <div className="flex flex-wrap gap-2">
-          <ViewButton label="Documents" onClick={() => openDetail(`Project: ${item.name}`, 'Project documents, photos, ownership, budget, and status details.', [
-            { label: 'Client', value: item.client },
-            { label: 'Engineer', value: item.engineer },
-            { label: 'Supervisor', value: item.supervisor },
-            { label: 'Location', value: item.location },
-            { label: 'Budget', value: formatRwf(item.budget) },
-            { label: 'Progress', value: `${item.progress}%` },
-          ], getDocuments('project', item.id))} />
-          <button onClick={() => openDetail(`Gantt: ${item.name}`, 'Milestone progress loaded from the backend project timeline.', [
-            { label: 'Project', value: item.name },
-            { label: 'Milestones', value: item.milestones },
-            { label: 'Progress', value: `${item.progress}%` },
-            { label: 'Status', value: <Badge value={item.status} /> },
-          ], getDocuments('project', item.id))} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold">Gantt</button>
-          <button disabled={actionBusy === `project-override-${item.id}`} onClick={() => runAdminAction(`project-override-${item.id}`, () => api.patch(`/api/v1/projects/${item.id}/status`, { status: item.status === 'PAUSED' ? 'active' : 'paused' }), 'Project status overridden successfully.')} className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 disabled:opacity-50">Override</button>
-        </div>,
-      ])} />
-    ));
-  }
+            item.role,
+
+            item.documentType,
+
+            <Badge value={item.risk} />,
+
+            <Badge value={item.status} />,
+
+            formatDate(item.submittedAt),
+
+            <div className="relative flex items-center gap-2">
+              {/* View */}
+              <ViewButton
+                onClick={() =>
+                  openDetail(
+                    `KYC: ${item.userName}`,
+                    item.notes,
+                    [
+                      { label: 'Role', value: item.role },
+                      {
+                        label: 'Document type',
+                        value: item.documentType,
+                      },
+                      {
+                        label: 'Risk',
+                        value: <Badge value={item.risk} />,
+                      },
+                      {
+                        label: 'Status',
+                        value: <Badge value={item.status} />,
+                      },
+                      {
+                        label: 'Submitted',
+                        value: formatDate(item.submittedAt),
+                      },
+                      {
+                        label: 'Expires',
+                        value: formatDate(item.expiresAt),
+                      },
+                    ],
+                    getDocuments('kyc', item.id)
+                  )
+                }
+              />
+
+              <div className="relative ml-2">
+                <ActionsMenuButton
+                  menuId={`kyc-${item.id}`}
+                  isOpen={activeMenu === `kyc-${item.id}`}
+                  onToggle={event => toggleMenu(event, `kyc-${item.id}`, 224, 180)}
+                  size="sm"
+                />
+                <ActionsMenuPanel
+                  menuId={`kyc-${item.id}`}
+                  isOpen={activeMenu === `kyc-${item.id}`}
+                  position={menuPosition}
+                  onClose={closeMenu}
+                  variant="centered"
+                >
+                  <ActionMenuItem
+                    busy={actionBusy === `kyc-approve-${item.id}`}
+                    label="Approve"
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    onClick={() =>
+                      runAdminAction(
+                        `kyc-approve-${item.id}`,
+                        () =>
+                          api.post(`/api/v1/kyc/${item.userId}/approve`, {
+                            reviewNote: 'Approved from admin web',
+                          }),
+                        'KYC approved successfully.'
+                      ).then(() => closeMenu())
+                    }
+                  />
+                  <ActionMenuItem
+                    busy={actionBusy === `kyc-docs-${item.id}`}
+                    label="Request docs"
+                    className="bg-amber-100 text-amber-800 hover:bg-amber-200"
+                    onClick={() =>
+                      runAdminAction(
+                        `kyc-docs-${item.id}`,
+                        () =>
+                          createAdminNotification(
+                            item.userId,
+                            'KYC documents requested',
+                            'Please upload clearer or updated KYC documents.',
+                            { type: 'kyc_documents_requested', documentId: item.id }
+                          ),
+                        'Additional KYC documents requested.'
+                      ).then(() => closeMenu())
+                    }
+                  />
+                  <ActionMenuItem
+                    busy={actionBusy === `kyc-reject-${item.id}`}
+                    label="Reject"
+                    className="mb-0 bg-rose-100 text-rose-800 hover:bg-rose-200"
+                    onClick={() =>
+                      runAdminAction(
+                        `kyc-reject-${item.id}`,
+                        () =>
+                          api.post(`/api/v1/kyc/${item.userId}/reject`, {
+                            reason: 'Rejected from admin web review',
+                            documentIds: [item.id],
+                          }),
+                        'KYC rejected successfully.'
+                      ).then(() => closeMenu())
+                    }
+                  />
+                </ActionsMenuPanel>
+              </div>
+            </div>,
+          ])}
+        />
+    )
+  );
+}
+
+
+if (page === 'users') {
+  const rows = data.users.map(item => ({
+    name: item.name,
+    email: item.email,
+    phone: item.phone,
+    role: item.role,
+    kyc: item.kycStatus,
+    status: item.status,
+    joined: formatDate(item.createdAt),
+  }));
+
+  return section(
+    <Users size={20} />,
+    'User Management',
+    'Manage admins, clients, engineers, supervisors, and suppliers.',
+    (
+      <DataTable
+          title="All Users"
+          headers={[
+            'User',
+            'Contact',
+            'Role',
+            'KYC',
+            'Status',
+            'Actions',
+          ]}
+          exportRowsData={rows}
+          rows={data.users.map(item => [
+            <strong>{item.name}</strong>,
+
+            <div>
+              <p>{item.email}</p>
+              <p className="text-xs text-gray-500">
+                {item.phone}
+              </p>
+            </div>,
+
+            item.role,
+
+            <Badge value={item.kycStatus} />,
+
+            <Badge value={item.status} />,
+
+            <div className="relative flex justify-center">
+              <ActionsMenuButton
+                menuId={`user-${item.id}`}
+                isOpen={activeMenu === `user-${item.id}`}
+                onToggle={event => toggleMenu(event, `user-${item.id}`, 320, 260)}
+              />
+              <ActionsMenuPanel
+                menuId={`user-${item.id}`}
+                isOpen={activeMenu === `user-${item.id}`}
+                position={menuPosition}
+                onClose={closeMenu}
+                widthClass="w-[320px] p-4"
+              >
+                    <button
+                      onClick={() => {
+                        closeMenu();
+
+                        openDetail(
+                          `User: ${item.name}`,
+                          'Complete user profile snapshot from backend admin data.',
+                          [
+                            {
+                              label: 'Email',
+                              value: item.email,
+                            },
+                            {
+                              label: 'Phone',
+                              value: item.phone,
+                            },
+                            {
+                              label: 'Username',
+                              value: item.username,
+                            },
+                            {
+                              label: 'Role',
+                              value: item.role,
+                            },
+                            {
+                              label: 'KYC',
+                              value: (
+                                <Badge
+                                  value={item.kycStatus}
+                                />
+                              ),
+                            },
+                            {
+                              label: 'Status',
+                              value: (
+                                <Badge value={item.status} />
+                              ),
+                            },
+                          ],
+                          data.uploadedDocuments.filter(
+                            document =>
+                              document.uploadedBy === item.name
+                          )
+                        );
+                      }}
+                      className="
+                        mb-3 flex w-full items-center justify-between
+                        rounded-2xl border border-gray-200
+                        bg-gray-50
+                        px-5 py-4
+                        text-left text-base font-semibold text-gray-700
+                        transition hover:bg-gray-100
+                      "
+                    >
+                      <span>View Profile</span>
+                    </button>
+
+                    {/* RESET */}
+                    <button
+                      disabled={
+                        actionBusy === `reset-${item.id}`
+                      }
+                      onClick={async () => {
+                        await runAdminAction(
+                          `reset-${item.id}`,
+                          () =>
+                            createAdminNotification(
+                              item.id,
+                              'Password reset requested',
+                              'An admin requested that you reset your password.',
+                              {
+                                type:
+                                  'password_reset_requested',
+                              }
+                            ),
+                          'Password reset request sent.'
+                        );
+
+                        closeMenu();
+                      }}
+                      className="
+                        mb-3 flex w-full items-center justify-between
+                        rounded-2xl
+                        bg-amber-100
+                        px-5 py-4
+                        text-left text-base font-bold text-amber-800
+                        transition hover:bg-amber-200
+                        disabled:opacity-50
+                      "
+                    >
+                      <span>Reset Password</span>
+
+                      {actionBusy === `reset-${item.id}` && (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      )}
+                    </button>
+
+                    {/* SUSPEND */}
+                    <button
+                      disabled={
+                        actionBusy === `suspend-${item.id}`
+                      }
+                      onClick={async () => {
+                        const shouldSuspend =
+                          item.status !== 'SUSPENDED';
+
+                        await runAdminAction(
+                          `suspend-${item.id}`,
+                          () =>
+                            api.put(
+                              `/api/v1/users/${item.id}`,
+                              {
+                                banned: shouldSuspend,
+                                banReason: shouldSuspend
+                                  ? 'Suspended from admin web'
+                                  : null,
+                                banExpires: null,
+                              }
+                            ),
+                          shouldSuspend
+                            ? 'User suspended successfully.'
+                            : 'User activated successfully.'
+                        );
+
+                        closeMenu();
+                      }}
+                      className={`
+                        flex w-full items-center justify-between
+                        rounded-2xl
+                        px-5 py-4
+                        text-left text-base font-bold
+                        transition
+                        disabled:opacity-50
+
+                        ${
+                          item.status === 'SUSPENDED'
+                            ? `
+                              bg-green-100
+                              text-green-800
+                              hover:bg-green-200
+                            `
+                            : `
+                              bg-rose-100
+                              text-rose-800
+                              hover:bg-rose-200
+                            `
+                        }
+                      `}
+                    >
+                      <span>
+                        {item.status === 'SUSPENDED'
+                          ? 'Activate User'
+                          : 'Suspend User'}
+                      </span>
+
+                      {actionBusy === `suspend-${item.id}` && (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      )}
+                    </button>
+              </ActionsMenuPanel>
+            </div>,
+          ])}
+        />
+    )
+  );}
+
+if (page === 'projects') {
+  const rows = data.projects.map(item => ({
+    project: item.name,
+    client: item.client,
+    engineer: item.engineer,
+    supervisor: item.supervisor,
+    location: item.location,
+    budget: item.budget,
+    progress: item.progress,
+    status: item.status,
+  }));
+
+  return section(
+    <Briefcase size={20} />,
+    'Project Portfolio Oversight',
+    'Audit project timelines, assignments, budgets, documents, photos, Gantt state, and contractor performance.',
+    (
+      <DataTable
+          title="Project Portfolio"
+          headers={[
+            'Project',
+            'Team',
+            'Location',
+            'Budget',
+            'Progress',
+            'Status',
+            'Actions',
+          ]}
+          exportRowsData={rows}
+          rows={data.projects.map(item => [
+            <strong>{item.name}</strong>,
+
+            <div>
+              <p>{item.client}</p>
+
+              <p className="text-xs text-gray-500">
+                {item.engineer} / {item.supervisor}
+              </p>
+            </div>,
+
+            item.location,
+
+            formatRwf(item.budget),
+
+            `${item.progress}%`,
+
+            <Badge value={item.status} />,
+
+            <div className="relative flex justify-center">
+              <ActionsMenuButton
+                menuId={`project-${item.id}`}
+                isOpen={activeMenu === `project-${item.id}`}
+                onToggle={event => toggleMenu(event, `project-${item.id}`, 340, 280)}
+              />
+              <ActionsMenuPanel
+                menuId={`project-${item.id}`}
+                isOpen={activeMenu === `project-${item.id}`}
+                position={menuPosition}
+                onClose={closeMenu}
+                widthClass="w-[340px] p-4"
+              >
+                    <button
+                      onClick={() => {
+                        closeMenu();
+
+                        openDetail(
+                          `Project: ${item.name}`,
+                          'Project documents, photos, ownership, budget, and status details.',
+                          [
+                            {
+                              label: 'Client',
+                              value: item.client,
+                            },
+                            {
+                              label: 'Engineer',
+                              value: item.engineer,
+                            },
+                            {
+                              label: 'Supervisor',
+                              value: item.supervisor,
+                            },
+                            {
+                              label: 'Location',
+                              value: item.location,
+                            },
+                            {
+                              label: 'Budget',
+                              value: formatRwf(item.budget),
+                            },
+                            {
+                              label: 'Progress',
+                              value: `${item.progress}%`,
+                            },
+                          ],
+                          getDocuments('project', item.id)
+                        );
+                      }}
+                      className="
+                        mb-3 flex w-full items-center justify-between
+                        rounded-2xl
+                        border border-gray-200
+                        bg-gray-50
+                        px-5 py-4
+
+                        text-left text-base font-semibold text-gray-700
+
+                        transition-all duration-200
+                        hover:bg-gray-100
+                      "
+                    >
+                      <span>View Documents</span>
+                    </button>
+
+                    {/* GANTT */}
+                    <button
+                      onClick={() => {
+                        closeMenu();
+
+                        openDetail(
+                          `Gantt: ${item.name}`,
+                          'Milestone progress loaded from the backend project timeline.',
+                          [
+                            {
+                              label: 'Project',
+                              value: item.name,
+                            },
+                            {
+                              label: 'Milestones',
+                              value: item.milestones,
+                            },
+                            {
+                              label: 'Progress',
+                              value: `${item.progress}%`,
+                            },
+                            {
+                              label: 'Status',
+                              value: (
+                                <Badge
+                                  value={item.status}
+                                />
+                              ),
+                            },
+                          ],
+                          getDocuments('project', item.id)
+                        );
+                      }}
+                      className="
+                        mb-3 flex w-full items-center justify-between
+                        rounded-2xl
+                        border border-blue-100
+                        bg-blue-50
+                        px-5 py-4
+
+                        text-left text-base font-bold text-blue-700
+
+                        transition-all duration-200
+                        hover:bg-blue-100
+                      "
+                    >
+                      <span>Open Gantt Timeline</span>
+                    </button>
+
+                    {/* OVERRIDE */}
+                    <button
+                      disabled={
+                        actionBusy ===
+                        `project-override-${item.id}`
+                      }
+                      onClick={async () => {
+                        await runAdminAction(
+                          `project-override-${item.id}`,
+                          () =>
+                            api.patch(
+                              `/api/v1/projects/${item.id}/status`,
+                              {
+                                status:
+                                  item.status === 'PAUSED'
+                                    ? 'active'
+                                    : 'paused',
+                              }
+                            ),
+                          'Project status overridden successfully.'
+                        );
+
+                        closeMenu();
+                      }}
+                      className="
+                        flex w-full items-center justify-between
+                        rounded-2xl
+                        bg-amber-100
+                        px-5 py-4
+
+                        text-left text-base font-bold text-amber-800
+
+                        transition-all duration-200
+                        hover:bg-amber-200
+
+                        disabled:opacity-50
+                      "
+                    >
+                      <span>
+                        {item.status === 'PAUSED'
+                          ? 'Resume Project'
+                          : 'Pause Project'}
+                      </span>
+
+                      {actionBusy ===
+                        `project-override-${item.id}` && (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      )}
+                    </button>
+              </ActionsMenuPanel>
+            </div>,
+          ])}
+        />
+    )
+  );
+}
 
   if (page === 'escrow') {
     const rows = data.transactions.map(item => ({ id: item.id, project: item.project, type: item.type, party: item.party, amount: item.amount, status: item.status, date: formatDate(item.createdAt) }));
@@ -645,7 +1282,10 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
         <button disabled={actionBusy === `resolve-${item.id}`} onClick={() => runAdminAction(`resolve-${item.id}`, () => api.put(`/api/v1/disputes/${item.id}`, {
           status: 'resolved_partial',
           resolution: { note: 'Resolved from admin web' },
-        }), 'Dispute resolved successfully.')} className="rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white disabled:opacity-50">Resolve</button>
+        }), 'Dispute resolved successfully.')} className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1 text-xs font-bold text-white disabled:opacity-50">
+          Resolve
+          {actionBusy === `resolve-${item.id}` && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        </button>
       </div>])} />
     ));
   }
@@ -768,7 +1408,10 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
             body: item.body,
             data: { resendOf: item.id, type: 'notification_resend' },
           });
-        }, 'Notification resent successfully.')} className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold disabled:opacity-50">Resend</button>
+        }, 'Notification resent successfully.')} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1 text-xs font-bold disabled:opacity-50">
+          Resend
+          {actionBusy === `resend-${item.id}` && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        </button>
       </div>])} />
     ));
   }
@@ -791,7 +1434,10 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
               <p><span className="font-semibold">Access:</span> Admin portal only</p>
             </div>
             <div className="mt-4">
-              <button disabled={actionBusy === 'profile-2fa'} onClick={() => runAdminAction('profile-2fa', () => logAdminAction('totp_setup_requested', { source: 'admin_web' }), '2FA setup request recorded.')} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold disabled:opacity-50">Record 2FA setup request</button>
+              <button disabled={actionBusy === 'profile-2fa'} onClick={() => runAdminAction('profile-2fa', () => logAdminAction('totp_setup_requested', { source: 'admin_web' }), '2FA setup request recorded.')} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold disabled:opacity-50">
+                Record 2FA setup request
+                {actionBusy === 'profile-2fa' && <Loader2 className="h-4 w-4 animate-spin" />}
+              </button>
             </div>
           </div>
 
@@ -820,7 +1466,10 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
               </label>
             </div>
             <div className="mt-4 flex justify-end">
-              <button disabled={actionBusy === 'profile-save'} onClick={updateProfile} className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Save profile</button>
+              <button disabled={actionBusy === 'profile-save'} onClick={updateProfile} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                Save profile
+                {actionBusy === 'profile-save' && <Loader2 className="h-4 w-4 animate-spin" />}
+              </button>
             </div>
           </div>
 
@@ -839,7 +1488,10 @@ const AdminOperationsPage: React.FC<AdminOperationsPageProps> = ({ page }) => {
                 Confirm password
                 <input type="password" value={passwordForm.confirmPassword} onChange={event => setPasswordForm(current => ({ ...current, confirmPassword: event.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand" />
               </label>
-              <button disabled={actionBusy === 'profile-password'} onClick={changePassword} className="w-full rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Change password</button>
+              <button disabled={actionBusy === 'profile-password'} onClick={changePassword} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                Change password
+                {actionBusy === 'profile-password' && <Loader2 className="h-4 w-4 animate-spin" />}
+              </button>
             </div>
           </div>
         </div>
