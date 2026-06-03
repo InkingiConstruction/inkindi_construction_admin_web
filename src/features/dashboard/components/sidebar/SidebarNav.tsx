@@ -18,15 +18,8 @@ import {
   ShieldCheck,
   Briefcase,
   Landmark,
-  Scale,
-  BarChart3,
-  ScrollText,
-  Settings,
   ChevronDown,
-  ClipboardList,
   Truck,
-  Wrench,
-  UserCog,
 } from 'lucide-react';
 import SidebarNavItem from './SidebarNavItem';
 
