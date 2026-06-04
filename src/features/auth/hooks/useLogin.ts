@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
-import { authClient } from '../../../lib/auth-client';
-import { mapBackendRole } from '../../../lib/api';
+import { api, mapBackendRole } from '../../../lib/api';
 import type { Role, User } from '../../../shared/types';
 import type { LoginPayload } from '../types/auth.types';
 
@@ -17,6 +16,11 @@ interface BackendUser {
   image?: string | null;
   createdAt?: string | Date;
   updatedAt?: string | Date;
+}
+
+interface LoginResponse {
+  token: string;
+  user: BackendUser;
 }
 
 const mapUser = (backendUser: BackendUser): User => ({
@@ -38,7 +42,7 @@ const mapUser = (backendUser: BackendUser): User => ({
 export const useLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login, refreshUser } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (payload: LoginPayload) => {
@@ -46,20 +50,13 @@ export const useLogin = () => {
     setError(null);
 
     try {
-      const response = await authClient.signIn.email({
+      const response = await api.post<LoginResponse>('/api/v1/auth/login', {
         email: payload.email,
         password: payload.password,
       });
 
-      if (response.error) {
-        throw new Error(response.error.message || 'Login failed.');
-      }
-
-      const session = await authClient.getSession();
-      const backendUser = (session.data?.user || response.data?.user) as
-        | BackendUser
-        | undefined;
-      const token = response.data?.token || null;
+      const backendUser = response.data.user;
+      const token = response.data.token;
 
       if (!backendUser) {
         throw new Error('Unable to load authenticated user.');
@@ -68,14 +65,10 @@ export const useLogin = () => {
       const user = mapUser(backendUser);
 
       if (user.role !== 'ADMIN') {
-        await authClient.signOut();
         throw new Error('This account is not allowed to access the admin portal.');
       }
 
       login(token, user);
-      if (session.data?.user) {
-        await refreshUser();
-      }
       navigate('/dashboard');
 
       return { success: true };

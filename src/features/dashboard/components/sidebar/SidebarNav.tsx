@@ -18,15 +18,8 @@ import {
   ShieldCheck,
   Briefcase,
   Landmark,
-  Scale,
-  BarChart3,
-  ScrollText,
-  Settings,
   ChevronDown,
-  ClipboardList,
   Truck,
-  Wrench,
-  UserCog,
 } from 'lucide-react';
 import SidebarNavItem from './SidebarNavItem';
 
@@ -49,24 +42,24 @@ const NAV_MAIN: NavItem[] = [
 ];
 
 const NAV_OPERATIONS: NavItem[] = [
-  { to: '/dashboard/kyc', icon: <ShieldCheck size={18} />, label: 'KYC Review', badge: 2 },
+  { to: '/dashboard/kyc', icon: <ShieldCheck size={18} />, label: 'KYC Review'},
   { to: '/dashboard/users', icon: <Users size={18} />, label: 'User Management' },
   { to: '/dashboard/projects', icon: <Briefcase size={18} />, label: 'Projects' },
-  { to: '/dashboard/supply', icon: <Truck size={18} />, label: 'Supply Chain', badge: 1 },
-  { to: '/dashboard/inspections', icon: <Wrench size={18} />, label: 'Inspections', badge: 1 },
+  { to: '/dashboard/supply', icon: <Truck size={18} />, label: 'Supply Chain'},
+  // { to: '/dashboard/inspections', icon: <Wrench size={18} />, label: 'Inspections', badge: 1 },
 ];
 
 const NAV_FINANCIAL: NavItem[] = [
-  { to: '/dashboard/escrow', icon: <Landmark size={18} />, label: 'Escrow & Finance', badge: 1 },
-  { to: '/dashboard/disputes', icon: <Scale size={18} />, label: 'Disputes', badge: 2 },
+  { to: '/dashboard/escrow', icon: <Landmark size={18} />, label: 'Escrow & Finance'},
+  // { to: '/dashboard/disputes', icon: <Scale size={18} />, label: 'Disputes', badge: 2 },
 ];
 
 const NAV_COMPLIANCE: NavItem[] = [
-  { to: '/dashboard/reports', icon: <BarChart3 size={18} />, label: 'Reports' },
-  { to: '/dashboard/audit', icon: <ScrollText size={18} />, label: 'Audit Logs' },
-  { to: '/dashboard/notifications', icon: <ClipboardList size={18} />, label: 'Notifications', badge: 2 },
-  { to: '/dashboard/settings', icon: <Settings size={18} />, label: 'System Config' },
-  { to: '/dashboard/profile', icon: <UserCog size={18} />, label: 'Admin Profile' },
+  // { to: '/dashboard/reports', icon: <BarChart3 size={18} />, label: 'Reports' },
+  // { to: '/dashboard/audit', icon: <ScrollText size={18} />, label: 'Audit Logs' },
+  // { to: '/dashboard/notifications', icon: <ClipboardList size={18} />, label: 'Notifications', badge: 2 },
+  // { to: '/dashboard/settings', icon: <Settings size={18} />, label: 'System Config' },
+  // { to: '/dashboard/profile', icon: <UserCog size={18} />, label: 'Profile' },
 ];
 
 // ─── Nav Group ───────────────────────────────────────────────────────────────

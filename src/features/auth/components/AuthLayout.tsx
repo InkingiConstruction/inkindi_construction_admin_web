@@ -25,37 +25,17 @@ interface AuthLayoutProps {
  */
 const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
   return (
-    <div className="min-h-screen relative flex items-center justify-center overflow-hidden bg-white">
-      {/* Premium Animated Background */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,var(--tw-gradient-stops))] from-brand/10 via-white to-white" />
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.03] pointer-events-none" />
-        
-        {/* Floating gradient orbs for depth */}
-        <motion.div 
-          animate={{ 
-            x: [0, 100, 0],
-            y: [0, -50, 0],
-          }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-24 -left-24 w-96 h-96 bg-brand/20 rounded-full blur-[100px] opacity-50"
-        />
-        <motion.div 
-          animate={{ 
-            x: [0, -80, 0],
-            y: [0, 100, 0],
-          }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute -bottom-24 -right-24 w-80 h-80 bg-blue-400/10 rounded-full blur-[100px] opacity-40"
-        />
+    // Add more vertical padding with py-8 or py-12
+    <div className="relative flex h-screen items-center justify-center overflow-hidden bg-[#f3f4f6] px-4 py-12 md:py-16 lg:py-20">
+      <div className="pointer-events-none absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,126,110,0.08),transparent_50%)]" />
       </div>
-      
-      {/* Content Container */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: 'easeOut' }}
-        className="relative z-20 w-full max-w-6xl px-4 flex justify-center"
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+        className="relative z-10 flex w-full max-w-7xl justify-center"
       >
         {children}
       </motion.div>          

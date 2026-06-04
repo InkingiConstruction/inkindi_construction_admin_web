@@ -1,8 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Role, User } from '../shared/types';
-import { authClient } from '../lib/auth-client';
-import { mapBackendRole } from '../lib/api';
+import { api, mapBackendRole } from '../lib/api';
 
 interface BackendUser {
   id: string;
@@ -53,17 +52,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshUser = async () => {
-    const session = await authClient.getSession();
-    const sessionUser = session.data?.user as BackendUser | undefined;
+    const storedToken = localStorage.getItem('inkingi_admin_token');
 
-    if (!sessionUser) {
+    if (!storedToken) {
       setUser(null);
       setToken(null);
       return;
     }
 
-    setUser(mapBackendUser(sessionUser));
-    setToken(session.data?.session?.token || 'cookie-session');
+    const response = await api.get<BackendUser>('/api/v1/auth/me');
+    setUser(mapBackendUser(response.data));
+    setToken(storedToken);
   };
 
   useEffect(() => {
@@ -82,12 +81,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const login = (newToken: string | null, newUser: User) => {
-    setToken(newToken || 'cookie-session');
+    if (newToken) {
+      localStorage.setItem('inkingi_admin_token', newToken);
+    }
+    setToken(newToken);
     setUser(newUser);
   };
 
   const logout = async () => {
-    await authClient.signOut();
+    localStorage.removeItem('inkingi_admin_token');
     setToken(null);
     setUser(null);
   };
