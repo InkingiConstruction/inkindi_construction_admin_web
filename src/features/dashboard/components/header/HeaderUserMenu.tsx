@@ -39,7 +39,7 @@ const HeaderUserMenu: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-[10px] bg-transparent  hover:border-gray-300 transition-all group"
       >        
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-pink-500 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform overflow-hidden">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center border border-gray-300 text-black shadow-md group-hover:scale-105 transition-transform overflow-hidden">
           {user?.avatar ? (
             <img src={user.avatar} alt={user?.name} className="w-full h-full object-cover" />
           ) : (

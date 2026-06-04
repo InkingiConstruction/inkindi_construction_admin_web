@@ -278,7 +278,7 @@ const DataTable: React.FC<{ title: string; headers: string[]; rows: React.ReactN
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-190 text-left text-sm">
           <thead className="bg-gray-50 text-xs font-bold uppercase text-gray-500">
             <tr>{headers.map(header => <th key={header} className="px-4 py-3">{header}</th>)}</tr>
           </thead>

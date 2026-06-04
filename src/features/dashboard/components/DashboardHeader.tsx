@@ -11,7 +11,7 @@
  * ============================================================================
  */
 import { Menu } from 'lucide-react';
-import { useAuth } from '../../../contexts/AuthContext';
+// import { useAuth } from '../../../contexts/AuthContext';
 import HeaderSearch from './header/HeaderSearch';
 import HeaderChat from './header/HeaderChat';
 import HeaderNotifications from './header/HeaderNotifications';
@@ -23,7 +23,7 @@ interface DashboardHeaderProps {
 }
 
 const DashboardHeader: React.FC<DashboardHeaderProps> = ({ onToggleSidebar }) => {
-  const { user } = useAuth();
+  // const { user } = useAuth();
   
   return (
     <header
@@ -46,14 +46,14 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ onToggleSidebar }) =>
       {/* Right actions */}
       <div className="flex items-center gap-1 shrink-0">
         {/* Admin badge */}
-        {user?.role === 'ADMIN' && (
+        {/* {user?.role === 'ADMIN' && (
           <span className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border mr-2"
             style={{ color: '#007E6E', borderColor: '#b3d9d4', backgroundColor: '#e6f5f3' }}
           >
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#007E6E' }} />
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" />
             Admin
           </span>
-        )}
+        )} */}
         <HeaderChat />
         <HeaderNotifications />
         <div className="w-px h-5 bg-gray-200 mx-2" />
